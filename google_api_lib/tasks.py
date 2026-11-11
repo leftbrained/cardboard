@@ -693,6 +693,7 @@ def get_file_user_emails(self, file_id) -> List[str]:
 
 @shared_task(base=GoogleApiClientTask, bind=True)
 def sync_drive_permissions_for_hunt(self, hunt_id):
+    logger.info(f"running sync_drive_permissions_for_hunt {hunt_id}, enabled={enabled()}")
     if not enabled():
         return
 
@@ -704,12 +705,18 @@ def sync_drive_permissions_for_hunt(self, hunt_id):
     users_with_access = hunt.get_users_with_perm("hunt_access")
 
     UserModel = get_user_model()
-    emails = get_file_user_emails.run(hunt.settings.google_drive_folder_id)
+    # Uses the global hunt folder id for permissions
+    logger.info(f"getting emails from folder {settings.GOOGLE_DRIVE_HUNT_FOLDER_ID}")
+    emails = get_file_user_emails.run(settings.GOOGLE_DRIVE_HUNT_FOLDER_ID)
     if not emails:
         logger.warn("Unable to get Google Drive emails for hunt", hunt)
         return
 
+    logger.info("reading users")
     users = UserModel.objects.filter(email__in=emails).exclude(
         id__in=[user.pk for user in users_with_access]
     )
+    new_emails = [user.email for user in users]
+    logger.info(f"assigning hunt_access to users {new_emails}")
     assign_perm("hunt_access", users, hunt)
+
